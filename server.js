@@ -28,14 +28,13 @@ async function geocodeCity(city) {
   return { lat, lon, name, country, state };
 }
 
-// ─── One Call API 3.0: daily forecast ────────────────────────────────────────
-async function getDailyForecast(lat, lon) {
-  const url = "https://api.openweathermap.org/data/3.0/onecall";
+// ─── Free 5-Day Forecast API ──────────────────────────────────────────────────
+async function getFiveDayForecast(lat, lon) {
+  const url = "https://api.openweathermap.org/data/2.5/forecast";
   const response = await axios.get(url, {
     params: {
       lat,
       lon,
-      exclude: "current,minutely,hourly,alerts",
       units: "metric",
       appid: process.env.OPENWEATHER_API_KEY,
     },
@@ -43,52 +42,76 @@ async function getDailyForecast(lat, lon) {
   return response.data;
 }
 
-// ─── Parse tomorrow's rain data ───────────────────────────────────────────────
+// ─── Parse tomorrow's data from 3-hourly forecast list ───────────────────────
 function parseTomorrow(forecastData) {
-  const tomorrow = forecastData.daily[1]; // index 0 = today, 1 = tomorrow
+  const now = new Date();
 
-  const rain = tomorrow.rain || 0; // mm
-  const pop = tomorrow.pop || 0; // probability of precipitation (0–1)
-  const weather = tomorrow.weather[0];
-  const tempMax = Math.round(tomorrow.temp.max);
-  const tempMin = Math.round(tomorrow.temp.min);
-  const humidity = tomorrow.humidity;
-  const windSpeed = Math.round(tomorrow.wind_speed);
-  const uvi = Math.round(tomorrow.uvi);
+  // Build tomorrow's date string (YYYY-MM-DD)
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split("T")[0];
 
-  // Determine rain verdict
+  // Filter forecast entries that fall on tomorrow
+  const tomorrowEntries = forecastData.list.filter((entry) =>
+    entry.dt_txt.startsWith(tomorrowStr)
+  );
+
+  if (tomorrowEntries.length === 0) {
+    throw new Error("Tomorrow's forecast is not available yet. Try again shortly.");
+  }
+
+  // Aggregate data across all 3-hourly slots for tomorrow
+  let totalPop = 0;
+  let totalRain = 0;
+  let temps = [];
+  let humidities = [];
+  let windSpeeds = [];
+
+  tomorrowEntries.forEach((entry) => {
+    totalPop += entry.pop || 0;
+    totalRain += entry.rain?.["3h"] || 0;
+    temps.push(entry.main.temp);
+    humidities.push(entry.main.humidity);
+    windSpeeds.push(entry.wind.speed);
+  });
+
+  const avgPop    = totalPop / tomorrowEntries.length;
+  const tempMax   = Math.round(Math.max(...temps));
+  const tempMin   = Math.round(Math.min(...temps));
+  const humidity  = Math.round(humidities.reduce((a, b) => a + b, 0) / humidities.length);
+  const windSpeed = Math.round(windSpeeds.reduce((a, b) => a + b, 0) / windSpeeds.length);
+
+  // Pick the midday slot for description & icon
+  const middayEntry = tomorrowEntries[Math.floor(tomorrowEntries.length / 2)];
+  const description = middayEntry.weather[0].description;
+  const icon        = middayEntry.weather[0].icon;
+
+  // Verdict based on average probability of precipitation
   let verdict, intensity;
-  if (pop < 0.2) {
-    verdict = "no_rain";
-    intensity = "Clear skies ahead";
-  } else if (pop < 0.4) {
-    verdict = "unlikely";
-    intensity = "Probably dry";
-  } else if (pop < 0.6) {
-    verdict = "possible";
-    intensity = "Rain possible";
-  } else if (pop < 0.8) {
-    verdict = "likely";
-    intensity = "Rain likely";
+  if (avgPop < 0.2) {
+    verdict = "no_rain";  intensity = "Clear skies ahead";
+  } else if (avgPop < 0.4) {
+    verdict = "unlikely"; intensity = "Probably dry";
+  } else if (avgPop < 0.6) {
+    verdict = "possible"; intensity = "Rain possible";
+  } else if (avgPop < 0.8) {
+    verdict = "likely";   intensity = "Rain likely";
   } else {
-    verdict = "certain";
-    intensity = "Definitely raining";
+    verdict = "certain";  intensity = "Definitely raining";
   }
 
   return {
     verdict,
     intensity,
-    pop: Math.round(pop * 100),
-    rain: rain.toFixed(1),
-    description: weather.description,
-    icon: weather.icon,
+    pop: Math.round(avgPop * 100),
+    rain: totalRain.toFixed(1),
+    description,
+    icon,
     tempMax,
     tempMin,
     humidity,
     windSpeed,
-    uvi,
-    sunrise: tomorrow.sunrise,
-    sunset: tomorrow.sunset,
+    uvi: "N/A",
   };
 }
 
@@ -101,20 +124,20 @@ app.get("/api/weather", async (req, res) => {
   }
 
   try {
-    const location = await geocodeCity(city.trim());
-    const forecastData = await getDailyForecast(location.lat, location.lon);
-    const tomorrow = parseTomorrow(forecastData);
+    const location     = await geocodeCity(city.trim());
+    const forecastData = await getFiveDayForecast(location.lat, location.lon);
+    const tomorrow     = parseTomorrow(forecastData);
 
     res.json({
       location: {
-        name: location.name,
+        name:    location.name,
         country: location.country,
-        state: location.state || null,
-        lat: location.lat,
-        lon: location.lon,
+        state:   location.state || null,
+        lat:     location.lat,
+        lon:     location.lon,
       },
       tomorrow,
-      timezone: forecastData.timezone,
+      timezone: forecastData.city.timezone,
     });
   } catch (err) {
     console.error("Weather API error:", err.message);
@@ -129,7 +152,7 @@ app.get("/api/weather", async (req, res) => {
       return res.status(429).json({ error: "API rate limit reached. Try again later." });
     }
 
-    res.status(500).json({ error: "Failed to fetch weather data. Please try again." });
+    res.status(500).json({ error: err.message || "Failed to fetch weather data." });
   }
 });
 
