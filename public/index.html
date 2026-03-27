@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Will It Rain Tomorrow?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sky:     #0a1628;
+      --sky-mid: #0f2040;
+      --cloud:   #1a3358;
+      --accent:  #4fc3f7;
+      --rain:    #29b6f6;
+      --sun:     #ffd54f;
+      --text:    #e8f4fd;
+      --muted:   #7fa8c9;
+      --card-bg: rgba(15, 32, 64, 0.72);
+      --radius:  16px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--sky);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* ── Animated sky background ──────────────────────────────────────── */
+    .sky-bg {
+      position: fixed; inset: 0; z-index: 0;
+      background: radial-gradient(ellipse at 20% 60%, #0d2b55 0%, #060f1e 70%);
+      overflow: hidden;
+    }
+
+    .star { position: absolute; border-radius: 50%; background: white; animation: twinkle var(--d, 3s) ease-in-out infinite alternate; }
+    @keyframes twinkle { from { opacity: 0.1; transform: scale(0.8); } to { opacity: 0.9; transform: scale(1.2); } }
+
+    .cloud-layer {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 280px;
+      background: linear-gradient(to top, rgba(10,22,40,0.9) 0%, transparent 100%);
+    }
+
+    /* floating rain drops */
+    .drop {
+      position: absolute; width: 2px; border-radius: 2px;
+      background: linear-gradient(to bottom, transparent, var(--accent));
+      animation: fall var(--spd, 1.4s) linear infinite;
+      opacity: 0;
+    }
+    @keyframes fall {
+      0%   { transform: translateY(-40px); opacity: 0; }
+      10%  { opacity: 0.6; }
+      90%  { opacity: 0.4; }
+      100% { transform: translateY(100vh); opacity: 0; }
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    .page {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 48px 20px 64px;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      animation: fadeDown 0.8s ease both;
+    }
+
+    .wordmark {
+      font-family: 'Instrument Serif', serif;
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .wordmark em { font-style: italic; color: var(--accent); }
+
+    .tagline {
+      margin-top: 8px;
+      font-size: 0.95rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Search card ──────────────────────────────────────────────────── */
+    .search-card {
+      width: 100%; max-width: 540px;
+      background: var(--card-bg);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(79, 195, 247, 0.18);
+      border-radius: var(--radius);
+      padding: 28px 28px 24px;
+      animation: fadeUp 0.8s 0.15s ease both;
+    }
+
+    .search-row {
+      display: flex; gap: 10px;
+    }
+
+    .search-input {
+      flex: 1;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(79,195,247,0.25);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      padding: 12px 16px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79,195,247,0.14);
+    }
+
+    .search-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: 10px;
+      color: #051525;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 500;
+      padding: 12px 22px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+      white-space: nowrap;
+    }
+    .search-btn:hover { background: #81d4fa; transform: translateY(-1px); }
+    .search-btn:active { transform: translateY(0); }
+
+    .popular-label {
+      margin-top: 14px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .chips {
+      margin-top: 8px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .chip {
+      background: rgba(79,195,247,0.08);
+      border: 1px solid rgba(79,195,247,0.2);
+      border-radius: 30px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      padding: 4px 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .chip:hover { background: rgba(79,195,247,0.2); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Result card ──────────────────────────────────────────────────── */
+    .result-card {
+      width: 100%; max-width: 540px;
+      margin-top: 24px;
+      background: var(--card-bg);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(79,195,247,0.18);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: none;
+      animation: fadeUp 0.5s ease both;
+    }
+    .result-card.visible { display: block; }
+
+    /* verdict banner */
+    .verdict-banner {
+      padding: 28px 28px 20px;
+      text-align: center;
+      border-bottom: 1px solid rgba(79,195,247,0.12);
+    }
+
+    .verdict-emoji { font-size: 3.2rem; display: block; margin-bottom: 8px; }
+
+    .verdict-title {
+      font-family: 'Instrument Serif', serif;
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      line-height: 1.15;
+    }
+
+    .verdict-subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    /* probability bar */
+    .prob-wrap {
+      margin: 18px 0 4px;
+    }
+    .prob-label {
+      display: flex; justify-content: space-between;
+      font-size: 0.82rem; color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .prob-bar-bg {
+      height: 8px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 8px;
+      background: linear-gradient(90deg, var(--rain), var(--accent));
+      transition: width 1s cubic-bezier(.4,0,.2,1);
+      width: 0;
+    }
+
+    /* location row */
+    .location-row {
+      padding: 14px 28px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      border-bottom: 1px solid rgba(79,195,247,0.08);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .location-row span { color: var(--text); font-weight: 500; }
+
+    /* stats grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      padding: 0;
+    }
+    .stat-cell {
+      padding: 18px 20px;
+      border-right: 1px solid rgba(79,195,247,0.08);
+      border-bottom: 1px solid rgba(79,195,247,0.08);
+      text-align: center;
+    }
+    .stat-cell:nth-child(3n) { border-right: none; }
+    .stat-cell:nth-last-child(-n+3) { border-bottom: none; }
+
+    .stat-icon { font-size: 1.4rem; margin-bottom: 4px; }
+    .stat-value {
+      font-family: 'Instrument Serif', serif;
+      font-size: 1.5rem;
+      color: var(--text);
+    }
+    .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* description footer */
+    .desc-footer {
+      padding: 14px 28px;
+      border-top: 1px solid rgba(79,195,247,0.08);
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-transform: capitalize;
+    }
+
+    /* ── Error ────────────────────────────────────────────────────────── */
+    .error-box {
+      width: 100%; max-width: 540px;
+      margin-top: 16px;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      display: none;
+      animation: fadeUp 0.3s ease both;
+    }
+    .error-box.visible { display: block; }
+
+    /* ── Loader ───────────────────────────────────────────────────────── */
+    .loader {
+      width: 100%; max-width: 540px;
+      margin-top: 24px;
+      text-align: center;
+      display: none;
+      animation: fadeUp 0.3s ease both;
+    }
+    .loader.visible { display: block; }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(79,195,247,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loader-text { color: var(--muted); font-size: 0.88rem; }
+
+    /* ── Verdict colours ──────────────────────────────────────────────── */
+    .verdict-no_rain   .verdict-title { color: var(--sun); }
+    .verdict-unlikely  .verdict-title { color: #a5f3fc; }
+    .verdict-possible  .verdict-title { color: var(--accent); }
+    .verdict-likely    .verdict-title { color: var(--rain); }
+    .verdict-certain   .verdict-title { color: #93c5fd; }
+
+    .verdict-no_rain   .prob-bar-fill { background: linear-gradient(90deg, #ffd54f, #fff176); }
+    .verdict-unlikely  .prob-bar-fill { background: linear-gradient(90deg, #a5f3fc, #67e8f9); }
+
+    /* ── Footer ───────────────────────────────────────────────────────── */
+    footer {
+      margin-top: auto;
+      padding-top: 48px;
+      text-align: center;
+      font-size: 0.78rem;
+      color: rgba(127,168,201,0.45);
+    }
+    footer a { color: inherit; text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- Animated background -->
+<div class="sky-bg" id="skyBg"></div>
+
+<main class="page">
+  <header>
+    <h1 class="wordmark">Will it <em>rain</em> tomorrow?</h1>
+    <p class="tagline">Powered by OpenWeatherMap · One Call API 3.0</p>
+  </header>
+
+  <!-- Search -->
+  <div class="search-card">
+    <div class="search-row">
+      <input
+        class="search-input"
+        id="cityInput"
+        type="text"
+        placeholder="Enter a city… e.g. London"
+        autocomplete="off"
+        aria-label="City name"
+      />
+      <button class="search-btn" id="searchBtn">Check →</button>
+    </div>
+    <p class="popular-label">Popular cities</p>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <!-- Loader -->
+  <div class="loader" id="loader">
+    <div class="spinner"></div>
+    <p class="loader-text">Checking tomorrow's forecast…</p>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- Result -->
+  <div class="result-card" id="resultCard">
+    <div class="verdict-banner" id="verdictBanner">
+      <span class="verdict-emoji" id="verdictEmoji"></span>
+      <div class="verdict-title" id="verdictTitle"></div>
+      <div class="verdict-subtitle" id="verdictSub"></div>
+      <div class="prob-wrap">
+        <div class="prob-label">
+          <span>Chance of rain</span>
+          <span id="probPct"></span>
+        </div>
+        <div class="prob-bar-bg"><div class="prob-bar-fill" id="probFill"></div></div>
+      </div>
+    </div>
+
+    <div class="location-row">
+      📍 Tomorrow's forecast for <span id="locationName"></span>
+    </div>
+
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="desc-footer" id="descFooter"></div>
+  </div>
+
+  <footer>
+    Data provided by <a href="https://openweathermap.org" target="_blank" rel="noopener">OpenWeatherMap</a>.
+    Temperatures in °C.
+  </footer>
+</main>
+
+<script>
+  /* ── Stars & rain drops ───────────────────────────────────────────── */
+  const skyBg = document.getElementById("skyBg");
+
+  for (let i = 0; i < 90; i++) {
+    const s = document.createElement("div");
+    s.className = "star";
+    const size = Math.random() * 2.2 + 0.5;
+    s.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      top:${Math.random()*80}%;
+      --d:${(Math.random()*3+1.5).toFixed(1)}s;
+      animation-delay:${(Math.random()*4).toFixed(1)}s;
+    `;
+    skyBg.appendChild(s);
+  }
+
+  function addRainDrops(count = 18) {
+    document.querySelectorAll(".drop").forEach(d => d.remove());
+    for (let i = 0; i < count; i++) {
+      const d = document.createElement("div");
+      d.className = "drop";
+      const height = Math.random() * 18 + 8;
+      d.style.cssText = `
+        left:${Math.random()*100}%;
+        top:${Math.random()*100}%;
+        height:${height}px;
+        --spd:${(Math.random()*1.2+0.9).toFixed(2)}s;
+        animation-delay:${(Math.random()*2).toFixed(2)}s;
+      `;
+      skyBg.appendChild(d);
+    }
+  }
+
+  /* ── Chips ────────────────────────────────────────────────────────── */
+  const cities = ["Mumbai","London","New York","Tokyo","Sydney","Cape Town","Paris","Dubai"];
+  const chipsEl = document.getElementById("chips");
+  cities.forEach(c => {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = c;
+    chip.addEventListener("click", () => {
+      document.getElementById("cityInput").value = c;
+      doSearch();
+    });
+    chipsEl.appendChild(chip);
+  });
+
+  /* ── UI helpers ───────────────────────────────────────────────────── */
+  const loader     = document.getElementById("loader");
+  const errorBox   = document.getElementById("errorBox");
+  const resultCard = document.getElementById("resultCard");
+
+  function showLoader()   { loader.classList.add("visible"); }
+  function hideLoader()   { loader.classList.remove("visible"); }
+  function showError(msg) { errorBox.textContent = "⚠ " + msg; errorBox.classList.add("visible"); }
+  function clearError()   { errorBox.classList.remove("visible"); }
+  function hideResult()   { resultCard.classList.remove("visible"); }
+
+  /* ── Render result ────────────────────────────────────────────────── */
+  const EMOJIS = {
+    no_rain:  "☀️",
+    unlikely: "🌤",
+    possible: "🌦",
+    likely:   "🌧",
+    certain:  "⛈",
+  };
+  const TITLES = {
+    no_rain:  "No rain expected!",
+    unlikely: "Probably staying dry",
+    possible: "Rain is possible",
+    likely:   "Rain is likely",
+    certain:  "Expect rain tomorrow",
+  };
+
+  function renderResult(data) {
+    const { location, tomorrow } = data;
+
+    // verdict banner
+    const banner = document.getElementById("verdictBanner");
+    banner.className = `verdict-banner verdict-${tomorrow.verdict}`;
+    document.getElementById("verdictEmoji").textContent = EMOJIS[tomorrow.verdict];
+    document.getElementById("verdictTitle").textContent = TITLES[tomorrow.verdict];
+    document.getElementById("verdictSub").textContent   = `${tomorrow.pop}% chance of precipitation`;
+    document.getElementById("probPct").textContent      = `${tomorrow.pop}%`;
+
+    // animate bar
+    const fill = document.getElementById("probFill");
+    fill.style.width = "0";
+    setTimeout(() => fill.style.width = `${tomorrow.pop}%`, 60);
+
+    // location
+    const locParts = [location.name, location.state, location.country].filter(Boolean);
+    document.getElementById("locationName").textContent = locParts.join(", ");
+
+    // stats
+    const stats = [
+      { icon: "🌡", value: `${tomorrow.tempMax}°`, label: "High" },
+      { icon: "🌡", value: `${tomorrow.tempMin}°`, label: "Low" },
+      { icon: "💧", value: `${tomorrow.rain} mm`, label: "Rainfall" },
+      { icon: "💦", value: `${tomorrow.humidity}%`, label: "Humidity" },
+      { icon: "💨", value: `${tomorrow.windSpeed} m/s`, label: "Wind" },
+      { icon: "☀️", value: `${tomorrow.uvi}`, label: "UV Index" },
+    ];
+
+    const grid = document.getElementById("statsGrid");
+    grid.innerHTML = stats.map(s => `
+      <div class="stat-cell">
+        <div class="stat-icon">${s.icon}</div>
+        <div class="stat-value">${s.value}</div>
+        <div class="stat-label">${s.label}</div>
+      </div>
+    `).join("");
+
+    document.getElementById("descFooter").textContent = `Forecast: ${tomorrow.description}`;
+
+    // rain drops intensity
+    if (tomorrow.verdict === "certain" || tomorrow.verdict === "likely") addRainDrops(32);
+    else if (tomorrow.verdict === "possible") addRainDrops(14);
+    else document.querySelectorAll(".drop").forEach(d => d.remove());
+
+    resultCard.classList.add("visible");
+  }
+
+  /* ── Main search ──────────────────────────────────────────────────── */
+  async function doSearch() {
+    const city = document.getElementById("cityInput").value.trim();
+    if (!city) return;
+
+    clearError();
+    hideResult();
+    showLoader();
+
+    try {
+      const res  = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Unknown error");
+      renderResult(data);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      hideLoader();
+    }
+  }
+
+  document.getElementById("searchBtn").addEventListener("click", doSearch);
+  document.getElementById("cityInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") doSearch();
+  });
+</script>
+</body>
+</html>
